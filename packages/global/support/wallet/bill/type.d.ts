@@ -19,11 +19,12 @@ export type BillSchemaType = {
     datasetSize?: number;
     extraPoints?: number;
   };
+  username: string;
 };
 
-export type ChatModuleBillType = {
+export type ChatModuleUsageType = {
+  tokens?: number;
   totalPoints: number;
   moduleName: string;
   model?: string;
-  charsLength?: number;
 };

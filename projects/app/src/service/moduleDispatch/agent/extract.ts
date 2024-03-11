@@ -1,6 +1,7 @@
 import { adaptChat2GptMessages } from '@fastgpt/global/core/chat/adapt';
-import { ChatContextFilter, countMessagesChars } from '@fastgpt/service/core/chat/utils';
-import type { moduleDispatchResType, ChatItemType } from '@fastgpt/global/core/chat/type.d';
+import { ChatContextFilter } from '@fastgpt/service/core/chat/utils';
+import type { ChatItemType } from '@fastgpt/global/core/chat/type.d';
+import { countMessagesTokens } from '@fastgpt/global/common/string/tiktoken';
 import { ChatRoleEnum } from '@fastgpt/global/core/chat/constants';
 import { getAIApi } from '@fastgpt/service/core/ai/config';
 import type {
@@ -14,7 +15,8 @@ import { replaceVariable } from '@fastgpt/global/common/string/tools';
 import { LLMModelItemType } from '@fastgpt/global/core/ai/model.d';
 import { getHistories } from '../utils';
 import { ModelTypeEnum, getLLMModel } from '@fastgpt/service/core/ai/model';
-import { formatModelChars2Points } from '@/service/support/wallet/usage/utils';
+import { formatModelChars2Points } from '@fastgpt/service/support/wallet/usage/utils';
+import json5 from 'json5';
 
 type Props = ModuleDispatchProps<{
   [ModuleInputKeyEnum.history]?: ChatItemType[];
@@ -46,7 +48,7 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
   const extractModel = getLLMModel(model);
   const chatHistories = getHistories(history, histories);
 
-  const { arg, charsLength } = await (async () => {
+  const { arg, tokens } = await (async () => {
     if (extractModel.toolChoice) {
       return toolChoice({
         ...props,
@@ -63,7 +65,8 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
 
   // remove invalid key
   for (let key in arg) {
-    if (!extractKeys.find((item) => item.key === key)) {
+    const item = extractKeys.find((item) => item.key === key);
+    if (!item) {
       delete arg[key];
     }
     if (arg[key] === '') {
@@ -71,12 +74,20 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
     }
   }
 
+  // auto fill required fields
+  extractKeys.forEach((item) => {
+    if (item.required && !arg[item.key]) {
+      arg[item.key] = item.defaultValue || '';
+    }
+  });
+
   // auth fields
   let success = !extractKeys.find((item) => !(item.key in arg));
   // auth empty value
   if (success) {
     for (const key in arg) {
-      if (arg[key] === '') {
+      const item = extractKeys.find((item) => item.key === key);
+      if (!item) {
         success = false;
         break;
       }
@@ -85,7 +96,7 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
 
   const { totalPoints, modelName } = formatModelChars2Points({
     model: extractModel.model,
-    charsLength,
+    tokens,
     modelType: ModelTypeEnum.llm
   });
 
@@ -98,7 +109,7 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
       totalPoints: user.openaiAccount?.key ? 0 : totalPoints,
       model: modelName,
       query: content,
-      charsLength,
+      tokens,
       extractDescription: description,
       extractResult: arg,
       contextTotalLen: chatHistories.length + 2
@@ -108,7 +119,7 @@ export async function dispatchContentExtract(props: Props): Promise<Response> {
         moduleName: name,
         totalPoints: user.openaiAccount?.key ? 0 : totalPoints,
         model: modelName,
-        charsLength
+        tokens
       }
     ]
   };
@@ -124,14 +135,8 @@ async function toolChoice({
     ...histories,
     {
       obj: ChatRoleEnum.Human,
-      value: `你的任务：
+      value: `你的任务是根据上下文获取适当的 JSON 字符串。要求：
 """
-${description || '根据用户要求获取适当的 JSON 字符串。'}
-"""
-
-要求：
-"""
-- 如果字段为空，你返回空字符串。
 - 字符串不要换行。
 - 结合上下文和当前问题进行获取。
 """
@@ -166,10 +171,15 @@ ${description || '根据用户要求获取适当的 JSON 字符串。'}
     description,
     parameters: {
       type: 'object',
-      properties,
-      required: extractKeys.filter((item) => item.required).map((item) => item.key)
+      properties
     }
   };
+  const tools: any = [
+    {
+      type: 'function',
+      function: agentFunction
+    }
+  ];
 
   const ai = getAIApi({
     userKey: user.openaiAccount,
@@ -180,18 +190,13 @@ ${description || '根据用户要求获取适当的 JSON 字符串。'}
     model: extractModel.model,
     temperature: 0,
     messages: [...adaptMessages],
-    tools: [
-      {
-        type: 'function',
-        function: agentFunction
-      }
-    ],
+    tools,
     tool_choice: { type: 'function', function: { name: agentFunName } }
   });
 
   const arg: Record<string, any> = (() => {
     try {
-      return JSON.parse(
+      return json5.parse(
         response?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments || '{}'
       );
     } catch (error) {
@@ -202,12 +207,9 @@ ${description || '根据用户要求获取适当的 JSON 字符串。'}
     }
   })();
 
-  const functionChars =
-    description.length + extractKeys.reduce((sum, item) => sum + item.desc.length, 0);
-
   return {
     rawResponse: response?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments || '',
-    charsLength: countMessagesChars(messages) + functionChars,
+    tokens: countMessagesTokens(messages, tools),
     arg
   };
 }
@@ -226,7 +228,7 @@ async function completions({
         json: extractKeys
           .map(
             (item) =>
-              `{"key":"${item.key}", "description":"${item.desc}", "required":${item.required}${
+              `{"key":"${item.key}", "description":"${item.desc}"${
                 item.enum ? `, "enum":"[${item.enum.split('\n')}]"` : ''
               }}`
           )
@@ -241,7 +243,6 @@ Human: ${content}`
     userKey: user.openaiAccount,
     timeout: 480000
   });
-
   const data = await ai.chat.completions.create({
     model: extractModel.model,
     temperature: 0.01,
@@ -257,26 +258,21 @@ Human: ${content}`
   if (start === -1 || end === -1)
     return {
       rawResponse: answer,
-      charsLength: countMessagesChars(messages),
+      tokens: countMessagesTokens(messages),
       arg: {}
     };
-
-  const jsonStr = answer
-    .substring(start, end + 1)
-    .replace(/(\\n|\\)/g, '')
-    .replace(/  /g, '');
 
   try {
     return {
       rawResponse: answer,
-      charsLength: countMessagesChars(messages),
-
-      arg: JSON.parse(jsonStr) as Record<string, any>
+      tokens: countMessagesTokens(messages),
+      arg: json5.parse(answer) as Record<string, any>
     };
   } catch (error) {
+    console.log(error);
     return {
       rawResponse: answer,
-      charsLength: countMessagesChars(messages),
+      tokens: countMessagesTokens(messages),
       arg: {}
     };
   }

@@ -14,15 +14,11 @@ import {
   ModalBody,
   Input,
   Switch,
-  Menu,
-  MenuButton,
-  MenuList,
-  MenuItem,
   Link
 } from '@chakra-ui/react';
 import { QuestionOutlineIcon } from '@chakra-ui/icons';
 import MyIcon from '@fastgpt/web/components/common/Icon';
-import { useLoading } from '@/web/common/hooks/useLoading';
+import { useLoading } from '@fastgpt/web/hooks/useLoading';
 import { useQuery } from '@tanstack/react-query';
 import {
   getShareChatList,

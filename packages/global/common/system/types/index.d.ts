@@ -39,9 +39,12 @@ export type FastGPTFeConfigsType = {
   systemTitle?: string;
   googleClientVerKey?: string;
   isPlus?: boolean;
+  show_phoneLogin?: boolean;
+  show_emailLogin?: boolean;
   oauth?: {
     github?: string;
     google?: string;
+    wechat?: string;
   };
   limit?: {
     exportDatasetLimitMinutes?: number;
@@ -60,6 +63,8 @@ export type SystemEnvType = {
   vectorMaxProcess: number;
   qaMaxProcess: number;
   pgHNSWEfSearch: number;
+  oneapiUrl?: string;
+  chatApiKey?: string;
 };
 
 // declare global {

@@ -169,6 +169,8 @@ curl --location --request POST '{{host}}/shareAuth/start' \
 
 响应值与[chat 接口格式相同](/docs/development/openapi/chat/#响应)，仅多了一个`token`。
 
+重点关注：`totalPoints`(总消耗AI积分)，`token`(Token消耗总数)
+
 ```bash
 curl --location --request POST '{{host}}/shareAuth/finish' \
 --header 'Content-Type: application/json' \
@@ -181,7 +183,7 @@ curl --location --request POST '{{host}}/shareAuth/finish' \
             "totalPoints": 1.5278,
             "query": "导演是谁\n《铃芽之旅》的导演是谁？\n这部电影的导演是谁？\n谁是《铃芽之旅》的导演？",
             "model": "Embedding-2(旧版，不推荐使用)",
-            "charsLength": 1524,
+            "tokens": 1524,
             "similarity": 0.83,
             "limit": 400,
             "searchMode": "embedding",
@@ -195,7 +197,7 @@ curl --location --request POST '{{host}}/shareAuth/finish' \
             "moduleType": "chatNode",
             "totalPoints": 0.593,
             "model": "FastAI-4k",
-            "charsLength": 593,
+            "tokens": 593,
             "query": "导演是谁",
             "maxToken": 2000,
             "quoteList": [
@@ -252,7 +254,7 @@ type ResponseType = {
     query?: string; // 用户问题/检索词
     textOutput?: string; // 文本输出
 
-    charsLength?: number; // 上下文总字数
+    tokens?: number; // 上下文总Tokens
     model?: string; // 使用到的模型
     contextTotalLen?: number; // 上下文总长度
     totalPoints?: number; // 总消耗AI积分
@@ -268,7 +270,7 @@ type ResponseType = {
     searchUsingReRank?: boolean; // 是否使用rerank
     extensionModel?: string; // 问题扩展模型
     extensionResult?: string; // 问题扩展结果
-    extensionCharsLength?: number; // 问题扩展总字符长度
+    extensionTokens?: number; // 问题扩展总字符长度
 
     cqList?: ClassifyQuestionAgentItemType[]; // 分类问题列表
     cqResult?: string; // 分类问题结果
